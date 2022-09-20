@@ -6,8 +6,8 @@ using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
 using System.Text.Json;
-using Mauloader_bot.Entities;
-using Mauloader_bot.Data;
+using mauloader_bot.Entities;
+using mauloader_bot.Interfaces;
 
 namespace Telegram.Bot.Services;
 
@@ -15,11 +15,13 @@ public class UpdateHandler : IUpdateHandler
 {
     private readonly ITelegramBotClient _botClient;
     private readonly ILogger<UpdateHandler> _logger;
+    private readonly ITikTokRepository _tikTokRepository;
 
-    public UpdateHandler(ITelegramBotClient botClient, ILogger<UpdateHandler> logger)
+    public UpdateHandler(ITelegramBotClient botClient, ILogger<UpdateHandler> logger, ITikTokRepository tikTokRepository)
     {
         _botClient = botClient;
         _logger = logger;
+        _tikTokRepository = tikTokRepository;
     }
 
     public async Task HandleUpdateAsync(ITelegramBotClient _, Update update, CancellationToken cancellationToken)
@@ -104,7 +106,7 @@ public class UpdateHandler : IUpdateHandler
                 cancellationToken: cancellationToken);
         }
 
-        static async Task<Message> Tiktok(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        async Task<Message> Tiktok(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
         {
             string[] url = message.Text.Split(" ");
 
@@ -118,7 +120,7 @@ public class UpdateHandler : IUpdateHandler
                     cancellationToken: cancellationToken);
             }
 
-            TikTok content = await TikTokRepository.FetchVideo(url[1]);
+            TikTok content = await _tikTokRepository.FetchVideo(url[1]);
 
             // Uncomment to save video to server, might be unnecessary
             // Only useful if you want to hoard and archive them

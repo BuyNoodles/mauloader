@@ -1,3 +1,5 @@
+using mauloader_bot.Data;
+using mauloader_bot.Interfaces;
 using Telegram.Bot;
 using Telegram.Bot.Services;
 
@@ -21,6 +23,7 @@ IHost host = Host.CreateDefaultBuilder(args)
                     return new TelegramBotClient(options, httpClient);
                 });
 
+        services.AddScoped<ITikTokRepository, TikTokRepository>();
         services.AddScoped<UpdateHandler>();
         services.AddScoped<ReceiverService>();
         services.AddHostedService<PollingService>();

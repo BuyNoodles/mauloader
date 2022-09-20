@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
-namespace Mauloader_bot.Entities
+namespace mauloader_bot.Entities
 {
     internal class Joke
     {

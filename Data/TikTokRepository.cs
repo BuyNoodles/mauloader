@@ -1,15 +1,16 @@
-﻿using Mauloader_bot.Entities;
+﻿using mauloader_bot.Interfaces;
+using mauloader_bot.Entities;
 using System.Text.Json;
 
-namespace Mauloader_bot.Data
+namespace mauloader_bot.Data
 {
-    public class TikTokRepository
+    public class TikTokRepository : ITikTokRepository
     {
         private static readonly string _apiUrl = "https://api.tikmate.app/api/lookup";
         private static readonly string _downloadUrl = "https://tikmate.app/download";
         private static readonly string _userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36";
 
-        public static async Task<TikTok> FetchVideo(string url)
+        public async Task<TikTok> FetchVideo(string url)
         {
             var parameters = new Dictionary<string, string> { { "url", url } };
             var encodedContent = new FormUrlEncodedContent(parameters);
@@ -23,14 +24,14 @@ namespace Mauloader_bot.Data
             var response = await req.SendAsync(msg);
             string content = await response.Content.ReadAsStringAsync();
 
-            TikTok? tiktok = JsonSerializer.Deserialize<TikTok>(content);
+            TikTok tiktok = JsonSerializer.Deserialize<TikTok>(content);
 
             tiktok.DownloadLink = $"{_downloadUrl}/{tiktok.Token}/{tiktok.Id}.mp4";
 
             return tiktok;
         }
 
-        public static async Task<bool> DownloadVideo(string url, string fileName)
+        public async Task<bool> DownloadVideo(string url, string fileName)
         {
             string file = $"Files/{fileName}.mp4";
 
