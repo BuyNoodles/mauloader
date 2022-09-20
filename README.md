@@ -42,4 +42,4 @@ Rename appsettings.json.bak to appsettings.json and set your own token you got f
 
 This is my cat Mau
 
-![Mau](Files/mau.jpg)
+<img src="Files/mau.jpg" width="200">
