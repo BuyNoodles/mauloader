@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<!--<Nullable>enable</Nullable>-->
+		<ImplicitUsings>enable</ImplicitUsings>
+		<ApplicationIcon>icon.ico</ApplicationIcon>
+		<Title>Telegram bot</Title>
+		<Authors>BuyNoodles</Authors>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="icon.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.1" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="6.0.0" />
+		<PackageReference Include="Telegram.Bot" Version="18.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Files\mau.jpg">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="Interfaces\" />
+	</ItemGroup>
+
+</Project>
