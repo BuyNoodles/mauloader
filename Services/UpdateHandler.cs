@@ -2,7 +2,6 @@
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
 using System.Text.Json;
@@ -16,12 +15,17 @@ public class UpdateHandler : IUpdateHandler
     private readonly ITelegramBotClient _botClient;
     private readonly ILogger<UpdateHandler> _logger;
     private readonly ITikTokRepository _tikTokRepository;
+    private readonly IRedditRepository _redditRepository;
+    private readonly IConfiguration _config;
 
-    public UpdateHandler(ITelegramBotClient botClient, ILogger<UpdateHandler> logger, ITikTokRepository tikTokRepository)
+    public UpdateHandler(ITelegramBotClient botClient, ILogger<UpdateHandler> logger,
+        ITikTokRepository tikTokRepository, IRedditRepository redditRepository, IConfiguration config)
     {
         _botClient = botClient;
         _logger = logger;
         _tikTokRepository = tikTokRepository;
+        _redditRepository = redditRepository;
+        _config = config;
     }
 
     public async Task HandleUpdateAsync(ITelegramBotClient _, Update update, CancellationToken cancellationToken)
@@ -48,16 +52,30 @@ public class UpdateHandler : IUpdateHandler
         if (message.Text is not { } messageText)
             return;
 
-        var action = messageText.Split(' ')[0] switch
+        Message action;
+
+        if (messageText.StartsWith("https://vm.tiktok.com/"))
         {
-            "/photo" => SendFile(_botClient, message, cancellationToken),
-            //"/inline_mode" => StartInlineQuery(_botClient, message, cancellationToken),
-            "/chuck" => Chuck(_botClient, message, cancellationToken),
-            "/tiktok" => Tiktok(_botClient, message, cancellationToken),
-            //"/throw" => FailingHandler(_botClient, message, cancellationToken),
-            _ => Usage(_botClient, message, cancellationToken)
-        };
-        Message sentMessage = await action;
+            action = await Tiktok(_botClient, message, cancellationToken);
+        }
+        else if (messageText.StartsWith("https://www.reddit.com/r/"))
+        {
+            action = await Reddit(_botClient, message, cancellationToken);
+        }
+        else
+        {
+            action = messageText.Split(' ')[0] switch
+            {
+                "/mau" => await SendFile(_botClient, message, cancellationToken),
+                // "/inline_mode" => StartInlineQuery(_botClient, message, cancellationToken),
+                "/chuck" => await Chuck(_botClient, message, cancellationToken),
+                "/tiktok" => await Tiktok(_botClient, message, cancellationToken),
+                "/reddit" => await Reddit(_botClient, message, cancellationToken),
+                // "/throw" => FailingHandler(_botClient, message, cancellationToken),
+                _ => await Usage(_botClient, message, cancellationToken)
+            };
+        }
+        Message sentMessage = action;
         _logger.LogInformation("The message was sent with id: {SentMessageId}", sentMessage.MessageId);
 
         static async Task<Message> SendFile(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
@@ -80,14 +98,16 @@ public class UpdateHandler : IUpdateHandler
 
         static async Task<Message> Usage(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
         {
-            const string usage = "Usage:\n" +
-                                 "/tiktok `[url]`   `TikTok video without watermark`\n" +
-                                 "/photo            `Sends a photo`\n" +
-                                 "/chuck            `Chuck Norris joke`\n";
+            const string usage = "<b>Usage</b>:\n\n" +
+                                 "/tiktok - TikTok video without watermark\n" +
+                                 "/reddit - Reddit videos\n" +
+                                 "/mau    - Mau\n" +
+                                 "/chuck  - Chuck Norris joke\n\n" +
+                                 "Or send me Tiktok or Reddit links without commands";
 
             return await botClient.SendTextMessageAsync(
                 chatId: message.Chat.Id,
-                parseMode: ParseMode.MarkdownV2,
+                parseMode: ParseMode.Html,
                 text: usage,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: cancellationToken);
@@ -108,28 +128,36 @@ public class UpdateHandler : IUpdateHandler
 
         async Task<Message> Tiktok(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
         {
-            string[] url = message.Text.Split(" ");
+            /* *
+             * Fetches api and sends TikTok video to user/group
+             * Can be used with and without command
+             * ie.
+             * 
+             * https://vm.tiktok.com...
+             * or /tiktok https://tiktok.com....
+             * 
+             */
 
-            if (url.Length < 2 || !url[1].StartsWith("https://vm.tiktok.com/"))
+            string errorMessage = "*Usage*: /tiktok `[url]`";
+
+            string url = CheckUrl("https://vm.tiktok.com", message);
+
+            if (url == "invalid")
             {
-                return await botClient.SendTextMessageAsync(
-                    chatId: message.Chat.Id,
-                    text: "Usage: /tiktok `[url]`",
-                    parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: new ReplyKeyboardRemove(),
-                    cancellationToken: cancellationToken);
+                return await SendMessage(botClient, message, cancellationToken, errorMessage);
             }
 
-            TikTok content = await _tikTokRepository.FetchVideo(url[1]);
+            Message initialMessage = await SendMessage(botClient, message,
+                cancellationToken, "Searching");
+
+            TikTok content = await _tikTokRepository.FetchVideo(url);
 
             // Uncomment to save video to server, might be unnecessary
             // Only useful if you want to hoard and archive them
 
             //bool download = Task.Run(async () => await TikTokRepository.DownloadVideo(content.DownloadLink, $"{content.Id}.mp4")).Result;
 
-            //Console.WriteLine("---------------------\n\n" + content.DownloadLink + $"\n\n**********************");
-
-            return await botClient.SendVideoAsync(
+            message = await botClient.SendVideoAsync(
                     chatId: message.Chat.Id,
                     video: content.DownloadLink,
                     caption: $"{content.AuthorName} - {content.CreatedTime}\n" +
@@ -138,7 +166,102 @@ public class UpdateHandler : IUpdateHandler
                              $"🔗: {content.ShareCount.FormatNumber()}",
                     supportsStreaming: true,
                     cancellationToken: cancellationToken);
+
+            await DeleteMessage(botClient, initialMessage, cancellationToken);
+
+            return message;
         }
+    }
+
+    async Task<Message> Reddit(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+    {
+        /* *
+         * Same as Tiktok
+         */
+
+        string errorMessage = "*Usage*: /reddit `[url]`";
+
+        string url = CheckUrl("https://www.reddit.com/r/", message);
+
+        if (url == "invalid")
+        {
+            return await SendMessage(botClient, message, cancellationToken, errorMessage);
+        }
+
+        Message initialMessage = await SendMessage(botClient, message,
+            cancellationToken, "Downloading Reddit video");
+
+        bool downloadVideo = _redditRepository.FetchVideo(url);
+
+        var compress = _config["BotConfiguration:CompressVideo"];
+
+        if (Convert.ToBoolean(compress))
+        {
+            await EditMessage(botClient, initialMessage, cancellationToken, "Compressing video");
+            bool compressedVideo = _redditRepository.CompressVideo();
+        }
+
+        await EditMessage(botClient, initialMessage, cancellationToken, "Uploading video");
+
+        await using (Stream stream = System.IO.File.OpenRead(@"Files\Reddit\reddit.mp4"))
+        {
+            Message m = await botClient.SendVideoAsync(
+                             chatId: message.Chat.Id,
+                             video: new InputMedia(stream, "reddit.mp4"),
+                             supportsStreaming: true,
+                             cancellationToken: cancellationToken);
+        }
+
+        await DeleteMessage(botClient, initialMessage, cancellationToken);
+
+        return message;
+    }
+
+    private static async Task<Message> SendMessage(ITelegramBotClient botClient,
+        Message message, CancellationToken cancellationToken, string messageContent)
+    {
+        return await botClient.SendTextMessageAsync(
+            chatId: message.Chat.Id,
+            text: messageContent,
+            parseMode: ParseMode.Markdown,
+            cancellationToken: cancellationToken);
+    }
+
+    private static async Task<Message> EditMessage(ITelegramBotClient botClient, Message initialMessage, CancellationToken cancellationToken, string messageContent)
+    {
+        return await botClient.EditMessageTextAsync(
+                chatId: initialMessage.Chat.Id,
+                messageId: initialMessage.MessageId,
+                text: messageContent,
+                cancellationToken: cancellationToken);
+    }
+
+    private static async Task DeleteMessage(ITelegramBotClient botClient, Message initialMessage, CancellationToken cancellationToken)
+    {
+        await botClient.DeleteMessageAsync(
+                chatId: initialMessage.Chat.Id,
+                messageId: initialMessage.MessageId,
+                cancellationToken: cancellationToken
+            );
+    }
+
+    private static string CheckUrl(string targetUrl, Message message)
+    {
+        string url = message.Text;
+        string[] command = message.Text.Split(" ");
+
+        // check if message sent is a command, if it is check if it has arguments
+        if (url.StartsWith("/") && command.Length > 1)
+        {
+            url = url.Split(" ")[1];
+        }
+
+        if (!url.StartsWith(targetUrl))
+        {
+            return "invalid";
+        }
+
+        return url;
     }
 
     private Task UnknownUpdateHandlerAsync(Update update, CancellationToken cancellationToken)

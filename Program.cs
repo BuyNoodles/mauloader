@@ -24,6 +24,7 @@ IHost host = Host.CreateDefaultBuilder(args)
                 });
 
         services.AddScoped<ITikTokRepository, TikTokRepository>();
+        services.AddScoped<IRedditRepository, RedditRepository>();
         services.AddScoped<UpdateHandler>();
         services.AddScoped<ReceiverService>();
         services.AddHostedService<PollingService>();
